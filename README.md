@@ -12,6 +12,6 @@ How to use:
 1. Open your terminal and run:
    ```python3 "\location of file\"```
 2. Paste the path of the .txt file.
-   ```» Path? "C:\Users\user\lexicon.txt"```
+   ```» Path? C:\Users\user\lexicon.txt```
 3. Insert info needed. Then, it will output results.
 
