@@ -1,7 +1,6 @@
 import os
 import collections
 import math
-import unicodedata
 
 # --------- PARSERS FOR NEW INPUTS ---------
 def parse_valid_counts(s):
@@ -23,10 +22,10 @@ def parse_valid_counts(s):
 
 def parse_maps(s):
     """
-    Syntax: "y=i a=e" meaning:
-      i -> y
-      e -> a
-    (right side is mapped to left side)
+    Syntax: "a=â y=ý" meaning:
+      â -> a
+      ý -> y
+    (right side is mapped to left side, one char each)
     """
     s = s.strip()
     if not s:
@@ -45,42 +44,29 @@ def parse_maps(s):
 
 def parse_graphs(s):
     """
-    Syntax: "ch sh th"
-    Returns: ["ch","sh","th"]
+    Syntax: "ch sh th" or "لا لآ لأ لإ"
+    Returns: ["ch","sh","th"] / [...]
     """
     s = s.strip()
     if not s:
         return []
     return [g for g in s.split() if g]
 
-# --------- LATIN NORMALIZATION / FILTERING ---------
-def strip_diacritics(ch):
-    """
-    Convert letters with diacritics to base ASCII letter: â -> a, é -> e, etc.
-    """
-    decomposed = unicodedata.normalize("NFD", ch)
-    base = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
-    return base
-
+# --------- GENERIC NORMALIZATION / FILTERING ---------
 def normalize_char(ch, extra_maps):
     # Ignore whitespace and digits
     if ch.isspace() or ch.isdigit():
         return None
 
-    # Strip diacritics to base form
-    base = strip_diacritics(ch).lower()
-    if not base:
+    # Keep any alphabetic character (any script)
+    if not ch.isalpha():
         return None
 
-    # We only keep single Latin letters a-z by default
-    if len(base) != 1 or not ("a" <= base <= "z"):
-        return None
+    # Apply explicit maps only (no automatic diacritic stripping)
+    if ch in extra_maps:
+        ch = extra_maps[ch]
 
-    # Apply custom maps (e.g. y=i)
-    if base in extra_maps:
-        base = extra_maps[base]
-
-    return base
+    return ch
 
 def count_letters(path, extra_maps, graphs):
     counter = collections.Counter()
@@ -97,11 +83,11 @@ def count_letters(path, extra_maps, graphs):
             while i < L:
                 matched = False
 
-                # Try graphs first
+                # Try graphs first (case-sensitive; change if you want)
                 if graphs:
                     for g in graphs:
                         gl = len(g)
-                        if i + gl <= L and line[i:i+gl].lower() == g.lower():
+                        if i + gl <= L and line[i:i+gl] == g:
                             counter[g] += 1
                             total_chars += 1
                             i += gl
@@ -406,10 +392,10 @@ def main():
     vc_str = input("» ValidCounts? (e.g. 12,9,8,6,4,3,2,1 or 12 9 8 6 4 3 2 1; leave blank for none) ")
     valid_counts = parse_valid_counts(vc_str)
 
-    maps_str = input("» Maps? (e.g. y=i a=e; right side maps to left; leave blank for none) ")
+    maps_str = input("» Maps? (e.g. a=â y=ý; right side maps to left; leave blank for none) ")
     extra_maps = parse_maps(maps_str)
 
-    graphs_str = input("» Graphs? (space-separated like: ch sh th; leave blank for none) ")
+    graphs_str = input("» Graphs? (space-separated like: ch sh th or لا لآ لأ لإ; leave blank for none) ")
     graphs = parse_graphs(graphs_str)
 
     if blanks < 0 or blanks > total_tiles:
