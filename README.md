@@ -1,6 +1,6 @@
 # scrabbletilegen
-Thank you for downloading scrabbletilegen.
-CLI app to calculate scrabble tile generation.
+Thank you for downloading scrabbletilegen,
+a CLI app to calculate scrabble tile generation.
 
 Important:
 1. You must have the latest version of python downloaded.
