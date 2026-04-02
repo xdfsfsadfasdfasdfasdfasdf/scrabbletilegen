@@ -33,10 +33,11 @@ def parse_scores_list(s):
 
 def parse_maps(s):
     """
-    Syntax: "a=â y=ý" meaning:
-      â -> a
-      ý -> y
+    Syntax: "A=Â Y=Ý" meaning:
+      Â -> A
+      Ý -> Y
     (right side is mapped to left side, one char each)
+    Case-insensitive: both sides are uppercased internally.
     """
     s = s.strip()
     if not s:
@@ -47,8 +48,8 @@ def parse_maps(s):
         if "=" not in part:
             continue
         left, right = part.split("=", 1)
-        left = left.strip()
-        right = right.strip()
+        left = left.strip().upper()
+        right = right.strip().upper()
         if len(left) == 1 and len(right) == 1:
             mapping[right] = left
     return mapping
@@ -56,17 +57,19 @@ def parse_maps(s):
 def parse_graphs(s):
     """
     Syntax: "ch sh th" or "لا لآ لأ لإ"
+    Case-insensitive: stored as uppercase.
     """
     s = s.strip()
     if not s:
         return []
-    return [g for g in s.split() if g]
+    return [g.upper() for g in s.split() if g]
 
 def parse_forced_letters(s):
     """
     Generic parser for things like:
       "Q=10 Z=10 M=3 E=1"
     Returns dict: { "Q":10, "Z":10, "M":3, "E":1 }
+    Keys normalized to uppercase.
     """
     s = s.strip()
     if not s:
@@ -77,7 +80,7 @@ def parse_forced_letters(s):
         if "=" not in part:
             continue
         key, val = part.split("=", 1)
-        key = key.strip()
+        key = key.strip().upper()
         val = val.strip()
         if not key or not val:
             continue
@@ -94,8 +97,14 @@ def normalize_char(ch, extra_maps):
         return None
     if not ch.isalpha():
         return None
+
+    # normalize to uppercase
+    ch = ch.upper()
+
+    # apply explicit maps
     if ch in extra_maps:
         ch = extra_maps[ch]
+
     return ch
 
 def count_letters(path, extra_maps, graphs):
@@ -106,7 +115,7 @@ def count_letters(path, extra_maps, graphs):
 
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            line = line.strip()
+            line = line.rstrip("\n")
             i = 0
             L = len(line)
             while i < L:
@@ -115,7 +124,7 @@ def count_letters(path, extra_maps, graphs):
                 if graphs:
                     for g in graphs:
                         gl = len(g)
-                        if i + gl <= L and line[i:i+gl] == g:
+                        if i + gl <= L and line[i:i+gl].upper() == g:
                             counter[g] += 1
                             total_chars += 1
                             i += gl
@@ -368,7 +377,8 @@ def apply_forced_letter_counts(tile_counts, forced_letter_counts, total_tiles, b
     total_letter_tiles = total_tiles - blanks
     new_counts = tile_counts.copy()
     for ch, forced in forced_letter_counts.items():
-        new_counts[ch] = max(0, forced)
+        ch_u = ch.upper()
+        new_counts[ch_u] = max(0, forced)
 
     forced_sum = sum(forced_letter_counts.get(ch, 0) for ch in new_counts)
     if forced_sum > total_letter_tiles:
@@ -421,7 +431,8 @@ def apply_forced_letter_scores(score_map, forced_letter_scores):
         return score_map
     new_scores = score_map.copy()
     for ch, sc in forced_letter_scores.items():
-        new_scores[ch] = sc
+        ch_u = ch.upper()
+        new_scores[ch_u] = sc
     return new_scores
 
 # --------- MAIN ---------
@@ -431,7 +442,7 @@ def main():
     YELLOW = "\033[93m"
     RESET = "\033[0m"
 
-    print(CYAN + "Scrabble-style Tile Generator v0.11" + RESET)
+    print(CYAN + "Scrabble-style Tile Generator v0.12" + RESET)
     print()
 
     path_str = input("» Path? ")
@@ -477,10 +488,10 @@ def main():
     vc_str = input("» ValidCounts? (CSV, e.g. 12,9,8,6,4,3,2,1; leave blank for none) ")
     valid_counts = parse_valid_counts(vc_str)
 
-    maps_str = input("» Maps? (e.g. a=â y=ý; right side maps to left; space-separated; leave blank for none) ")
+    maps_str = input("» Maps? (e.g. A=Â Y=Ý; right side maps to left; space-separated; leave blank for none) ")
     extra_maps = parse_maps(maps_str)
 
-    graphs_str = input("» Graphs? (space-separated like: ch sh th or لا لآ لأ لإ; leave blank for none) ")
+    graphs_str = input("» Graphs? (space-separated like: CH SH TH or لا لآ لأ لإ; leave blank for none) ")
     graphs = parse_graphs(graphs_str)
 
     fls_str = input("» ForcedLetterScores? (e.g. Q=10 Z=10 M=3 E=1; space-separated; leave blank for none) ")
