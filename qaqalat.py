@@ -3,12 +3,15 @@ import collections
 import math
 
 # --------- PARSERS FOR NEW INPUTS ---------
-def parse_valid_counts(s):
+def parse_int_csv(s):
+    """
+    Generic CSV int parser.
+    Accepts: '1,2,3' or '1, 2, 3'
+    """
     s = s.strip()
     if not s:
-        return None
-    # Accept commas and/or spaces
-    parts = s.replace(",", " ").split()
+        return []
+    parts = s.split(",")
     vals = []
     for part in parts:
         part = part.strip()
@@ -18,7 +21,15 @@ def parse_valid_counts(s):
             vals.append(int(part))
         except ValueError:
             pass
+    return vals
+
+def parse_valid_counts(s):
+    vals = parse_int_csv(s)
     return sorted(set(vals), reverse=True) if vals else None
+
+def parse_scores_list(s):
+    vals = parse_int_csv(s)
+    return sorted(set(vals)) if vals else None
 
 def parse_maps(s):
     """
@@ -45,34 +56,52 @@ def parse_maps(s):
 def parse_graphs(s):
     """
     Syntax: "ch sh th" or "لا لآ لأ لإ"
-    Returns: ["ch","sh","th"] / [...]
     """
     s = s.strip()
     if not s:
         return []
     return [g for g in s.split() if g]
 
+def parse_forced_letters(s):
+    """
+    Generic parser for things like:
+      "Q=10 Z=10 M=3 E=1"
+    Returns dict: { "Q":10, "Z":10, "M":3, "E":1 }
+    """
+    s = s.strip()
+    if not s:
+        return {}
+    result = {}
+    parts = s.split()
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, val = part.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if not key or not val:
+            continue
+        try:
+            n = int(val)
+        except ValueError:
+            continue
+        result[key] = n
+    return result
+
 # --------- GENERIC NORMALIZATION / FILTERING ---------
 def normalize_char(ch, extra_maps):
-    # Ignore whitespace and digits
     if ch.isspace() or ch.isdigit():
         return None
-
-    # Keep any alphabetic character (any script)
     if not ch.isalpha():
         return None
-
-    # Apply explicit maps only (no automatic diacritic stripping)
     if ch in extra_maps:
         ch = extra_maps[ch]
-
     return ch
 
 def count_letters(path, extra_maps, graphs):
     counter = collections.Counter()
     total_chars = 0
 
-    # Sort graphs by length desc so longer ones match first
     graphs = sorted(set(graphs), key=len, reverse=True)
 
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -83,7 +112,6 @@ def count_letters(path, extra_maps, graphs):
             while i < L:
                 matched = False
 
-                # Try graphs first (case-sensitive; change if you want)
                 if graphs:
                     for g in graphs:
                         gl = len(g)
@@ -115,9 +143,6 @@ def parse_forced_reductions(s):
       "10=1, 8=1, 5=1, 4=2, 3=2, 2=4-3, 1=12-4"
     Output:
       {score: (min_tiles, max_tiles)}
-    Rules:
-      - "10=1"  => score 10: min=1, max=1
-      - "2=4-3" => score 2: min=3, max=4
     """
     s = s.strip()
     if not s:
@@ -183,7 +208,6 @@ def frequencies_to_tiles(letter_counts, total_tiles, blanks, norm_power=1.0):
     tile_counts = {ch: max(1, int(round(raw))) for ch, raw in raw_tiles.items()}
     diff = sum(tile_counts.values()) - total_letter_tiles
 
-    # Fix rounding errors
     sorted_letters = [ch for ch, _ in sorted(weights, key=lambda x: x[1], reverse=True)]
     idx = 0
     direction = -1 if diff > 0 else 1
@@ -336,15 +360,78 @@ def snap_to_valid_counts(tile_counts, valid_counts, total_tiles, blanks):
 
     return snapped
 
+# --------- ForcedLetterCounts APPLICATION ---------
+def apply_forced_letter_counts(tile_counts, forced_letter_counts, total_tiles, blanks):
+    if not forced_letter_counts:
+        return tile_counts
+
+    total_letter_tiles = total_tiles - blanks
+    new_counts = tile_counts.copy()
+    for ch, forced in forced_letter_counts.items():
+        new_counts[ch] = max(0, forced)
+
+    forced_sum = sum(forced_letter_counts.get(ch, 0) for ch in new_counts)
+    if forced_sum > total_letter_tiles:
+        return {ch: forced_letter_counts.get(ch, 0) for ch in new_counts}
+
+    remaining = total_letter_tiles - forced_sum
+    if remaining < 0:
+        remaining = 0
+
+    non_forced = [ch for ch in new_counts.keys() if ch not in forced_letter_counts]
+    if not non_forced or remaining == 0:
+        for ch in non_forced:
+            new_counts[ch] = 0
+        return new_counts
+
+    old_sum = sum(tile_counts.get(ch, 0) for ch in non_forced)
+    if old_sum <= 0:
+        idx = 0
+        while remaining > 0 and non_forced:
+            ch = non_forced[idx % len(non_forced)]
+            new_counts[ch] = new_counts.get(ch, 0) + 1
+            remaining -= 1
+            idx += 1
+        return new_counts
+
+    raw = {}
+    for ch in non_forced:
+        raw[ch] = (tile_counts.get(ch, 0) / old_sum) * remaining
+
+    for ch in non_forced:
+        new_counts[ch] = int(round(raw[ch]))
+
+    diff = sum(new_counts[ch] for ch in non_forced) - remaining
+    direction = -1 if diff > 0 else 1
+    diff = abs(diff)
+    idx = 0
+    while diff > 0 and non_forced:
+        ch = non_forced[idx % len(non_forced)]
+        val = new_counts.get(ch, 0) + direction
+        if val >= 0:
+            new_counts[ch] = val
+            diff -= 1
+        idx += 1
+
+    return new_counts
+
+# --------- ForcedLetterScores APPLICATION ---------
+def apply_forced_letter_scores(score_map, forced_letter_scores):
+    if not forced_letter_scores:
+        return score_map
+    new_scores = score_map.copy()
+    for ch, sc in forced_letter_scores.items():
+        new_scores[ch] = sc
+    return new_scores
+
 # --------- MAIN ---------
 def main():
-    # Colors
     CYAN = "\033[96m"
     GREEN = "\033[92m"
     YELLOW = "\033[93m"
     RESET = "\033[0m"
 
-    print(CYAN + "Scrabble-style Tile Generator" + RESET)
+    print(CYAN + "Scrabble-style Tile Generator v0.11" + RESET)
     print()
 
     path_str = input("» Path? ")
@@ -368,15 +455,13 @@ def main():
         print("Invalid number for blanks.")
         return
 
-    scores_str = input("» Scores (comma-separated, e.g. 1,2,3,4,5,8,10)? ")
-    try:
-        score_values = [int(x.strip()) for x in scores_str.split(",") if x.strip()]
-        score_values = sorted(set(score_values))
-    except ValueError:
-        print("Invalid scores.")
+    scores_str = input("» Scores (CSV, e.g. 1,2,3,4,5,8,10)? ")
+    score_values = parse_scores_list(scores_str)
+    if not score_values:
+        print("Invalid or empty scores.")
         return
 
-    fr_str = input("» ForcedReductions? (e.g. 10=1, 8=1, 5=1, 4=2, 3=2, 2=4-3, 1=12-4) ")
+    fr_str = input("» ForcedReductions? (CSV, e.g. 10=1, 8=1, 5=1, 4=2, 3=2, 2=4-3, 1=12-4) ")
     forced_ranges = parse_forced_reductions(fr_str)
 
     norm_str = input("» Norm? (0.8–0.9 recommended, leave blank for 1.0) ")
@@ -389,20 +474,23 @@ def main():
     else:
         norm_power = 1.0
 
-    vc_str = input("» ValidCounts? (e.g. 12,9,8,6,4,3,2,1 or 12 9 8 6 4 3 2 1; leave blank for none) ")
+    vc_str = input("» ValidCounts? (CSV, e.g. 12,9,8,6,4,3,2,1; leave blank for none) ")
     valid_counts = parse_valid_counts(vc_str)
 
-    maps_str = input("» Maps? (e.g. a=â y=ý; right side maps to left; leave blank for none) ")
+    maps_str = input("» Maps? (e.g. a=â y=ý; right side maps to left; space-separated; leave blank for none) ")
     extra_maps = parse_maps(maps_str)
 
     graphs_str = input("» Graphs? (space-separated like: ch sh th or لا لآ لأ لإ; leave blank for none) ")
     graphs = parse_graphs(graphs_str)
 
+    fls_str = input("» ForcedLetterScores? (e.g. Q=10 Z=10 M=3 E=1; space-separated; leave blank for none) ")
+    forced_letter_scores = parse_forced_letters(fls_str)
+
+    flc_str = input("» ForcedLetterCounts? (e.g. Q=1 Z=1 E=12; space-separated; leave blank for none) ")
+    forced_letter_counts = parse_forced_letters(flc_str)
+
     if blanks < 0 or blanks > total_tiles:
         print("Blanks must be between 0 and total tiles.")
-        return
-    if not score_values:
-        print("You must provide at least one score value.")
         return
 
     print("\n" + YELLOW + "Reading and analyzing wordlist…" + RESET)
@@ -419,6 +507,12 @@ def main():
 
     if valid_counts:
         tile_counts = snap_to_valid_counts(tile_counts, valid_counts, total_tiles, blanks)
+
+    if forced_letter_counts:
+        tile_counts = apply_forced_letter_counts(tile_counts, forced_letter_counts, total_tiles, blanks)
+
+    if forced_letter_scores:
+        score_map = apply_forced_letter_scores(score_map, forced_letter_scores)
 
     print("\n" + GREEN + "» Generated tile counts:" + RESET)
     tiles_by_count = collections.defaultdict(list)
